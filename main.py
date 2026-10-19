@@ -14,7 +14,6 @@ from kivy.core.clipboard import Clipboard
 from kivy.clock import Clock
 from kivy.core.window import Window
 
-# Dark Modern Studio Theme
 Window.clearcolor = (0.07, 0.08, 0.11, 1)
 
 CONFIG_FILE = "studio_config.json"
@@ -41,7 +40,6 @@ class HomeScreen(Screen):
         super().__init__(**kwargs)
         root = BoxLayout(orientation='vertical', padding=18, spacing=12)
 
-        # Header Title
         title_box = BoxLayout(orientation='vertical', size_hint_y=None, height=60, spacing=4)
         title = Label(
             text="[b]AI VIDEO STUDIO PRO[/b]", 
@@ -58,13 +56,11 @@ class HomeScreen(Screen):
         title_box.add_widget(subtitle)
         root.add_widget(title_box)
 
-        # Form Container
         scroll = ScrollView()
         form = BoxLayout(orientation='vertical', spacing=10, size_hint_y=None)
         form.bind(minimum_height=form.setter('height'))
 
-        # API Key Field with auto-saved memory
-        form.add_widget(Label(text="Google Gemini API Key:", size_hint_y=None, height=22, font_size='13sp', halign='left', color=(0.8, 0.8, 0.8, 1)))
+        form.add_widget(Label(text="Google Gemini API Key:", size_hint_y=None, height=22, font_size='13sp', color=(0.8, 0.8, 0.8, 1)))
         saved_key = load_saved_key()
         self.api_input = TextInput(
             text=saved_key,
@@ -78,7 +74,6 @@ class HomeScreen(Screen):
         )
         form.add_widget(self.api_input)
 
-        # Video Topic / Niche
         form.add_widget(Label(text="Story Theme / Channel Niche:", size_hint_y=None, height=22, font_size='13sp', color=(0.8, 0.8, 0.8, 1)))
         self.niche_input = TextInput(
             text="Bal Ganesha 3D Animation Stories",
@@ -91,7 +86,6 @@ class HomeScreen(Screen):
         )
         form.add_widget(self.niche_input)
 
-        # Main Character / Setting Description
         form.add_widget(Label(text="Specific Setting / Characters (Optional):", size_hint_y=None, height=22, font_size='13sp', color=(0.8, 0.8, 0.8, 1)))
         self.character_input = TextInput(
             text="Bal Ganesha and Mushak on Kailash Mountain",
@@ -104,7 +98,6 @@ class HomeScreen(Screen):
         )
         form.add_widget(self.character_input)
 
-        # Duration Selector
         form.add_widget(Label(text="Video Duration (Seconds):", size_hint_y=None, height=22, font_size='13sp', color=(0.8, 0.8, 0.8, 1)))
         self.sec_input = TextInput(
             text="30", 
@@ -116,14 +109,12 @@ class HomeScreen(Screen):
         )
         form.add_widget(self.sec_input)
 
-        # Error notification bar
         self.error_label = Label(text="", size_hint_y=None, height=26, color=(1, 0.3, 0.3, 1), font_size='12sp')
         form.add_widget(self.error_label)
 
         scroll.add_widget(form)
         root.add_widget(scroll)
 
-        # Action Button
         self.generate_btn = Button(
             text="Generate Complete Production Studio", 
             size_hint_y=None, 
@@ -201,7 +192,7 @@ class ProcessingScreen(Screen):
     def launch_generation(self):
         self.progress.value = 25
         self.step_label.text = "Structuring Story & Dialogues..."
-        self.detail_label.text = "Drafting scene pacing and comedic elements..."
+        self.detail_label.text = "Connecting to Gemini Engine..."
         t = threading.Thread(target=self._worker_thread)
         t.daemon = True
         t.start()
@@ -225,26 +216,39 @@ class ProcessingScreen(Screen):
             f"Complete background sound effects (SFX), musical mood, pacing, and voice modulation directions."
         )
 
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={data['api_key']}"
         headers = {"Content-Type": "application/json"}
         payload = {"contents": [{"parts": [{"text": prompt}]}]}
 
-        try:
-            Clock.schedule_once(lambda dt: self.update_status(65, "Rendering Visual Prompts...", "Optimizing 3D Pixar character descriptions..."), 0)
-            res = requests.post(url, headers=headers, json=payload, timeout=40, verify=False)
-            res_json = res.json()
+        # Supported models list for automatic fallback
+        model_endpoints = [
+            ("v1beta", "gemini-1.5-flash-latest"),
+            ("v1beta", "gemini-1.5-pro-latest"),
+            ("v1beta", "gemini-pro"),
+            ("v1", "gemini-1.5-flash")
+        ]
 
-            if "candidates" in res_json and len(res_json["candidates"]) > 0:
-                raw_text = res_json["candidates"][0]["content"]["parts"][0]["text"]
-                Clock.schedule_once(lambda dt: self.on_complete(raw_text), 0)
-            elif "error" in res_json:
-                err = res_json["error"].get("message", "API Request Failed")
-                Clock.schedule_once(lambda dt: self.on_fail(f"API Error: {err}"), 0)
-            else:
-                Clock.schedule_once(lambda dt: self.on_fail("Empty response from AI server."), 0)
+        success = False
+        last_error = ""
 
-        except Exception as e:
-            Clock.schedule_once(lambda dt: self.on_fail(str(e)), 0)
+        for ver, mod in model_endpoints:
+            url = f"https://generativelanguage.googleapis.com/{ver}/models/{mod}:generateContent?key={data['api_key']}"
+            try:
+                Clock.schedule_once(lambda dt, m=mod: self.update_status(65, "Rendering Production Bundle...", f"Connected via {m}..."), 0)
+                res = requests.post(url, headers=headers, json=payload, timeout=40, verify=False)
+                res_json = res.json()
+
+                if "candidates" in res_json and len(res_json["candidates"]) > 0:
+                    raw_text = res_json["candidates"][0]["content"]["parts"][0]["text"]
+                    Clock.schedule_once(lambda dt: self.on_complete(raw_text), 0)
+                    success = True
+                    break
+                elif "error" in res_json:
+                    last_error = res_json["error"].get("message", "API Request Failed")
+            except Exception as e:
+                last_error = str(e)
+
+        if not success:
+            Clock.schedule_once(lambda dt: self.on_fail(f"API Error: {last_error}"), 0)
 
     def update_status(self, val, step_txt, detail_txt):
         self.progress.value = val
@@ -275,7 +279,6 @@ class EditorScreen(Screen):
 
         root = BoxLayout(orientation='vertical', padding=14, spacing=8)
 
-        # Header with navigation
         header = BoxLayout(size_hint_y=None, height=42, spacing=10)
         back_btn = Button(text="< New", size_hint_x=0.25, background_color=(0.25, 0.28, 0.35, 1))
         back_btn.bind(on_release=self.go_home)
@@ -288,7 +291,6 @@ class EditorScreen(Screen):
         header.add_widget(copy_all_btn)
         root.add_widget(header)
 
-        # View Filter Buttons (Play Store Tab Style)
         tab_bar = BoxLayout(size_hint_y=None, height=36, spacing=6)
         self.btn_all = Button(text="All", background_color=(0, 0.6, 0.9, 1))
         self.btn_all.bind(on_release=lambda x: self.switch_view("all"))
@@ -308,7 +310,6 @@ class EditorScreen(Screen):
         tab_bar.add_widget(self.btn_audio)
         root.add_widget(tab_bar)
 
-        # Full Editable Scroll Area
         scroll = ScrollView()
         self.editor = TextInput(
             text="", 
@@ -321,7 +322,6 @@ class EditorScreen(Screen):
         scroll.add_widget(self.editor)
         root.add_widget(scroll)
 
-        # Toast notification label
         self.toast = Label(text="", size_hint_y=None, height=22, font_size='12sp', color=(0.3, 1, 0.4, 1))
         root.add_widget(self.toast)
 
@@ -333,7 +333,6 @@ class EditorScreen(Screen):
         self.prompts_part = ""
         self.audio_part = ""
 
-        # Parse sections if tags exist
         if "===SECTION: SCRIPT===" in content:
             try:
                 parts = content.split("===SECTION: SCRIPT===")[1]
