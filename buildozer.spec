@@ -6,7 +6,7 @@ source.dir = .
 source.include_exts = py,png,jpg,kv,atlas
 version = 1.0.0
 icon.filename = %(source.dir)s/IMG_20261019_154959.png
-requirements = python3==3.11.9,kivy,google-generativeai,urllib3,requests,certifi
+requirements = python3,kivy,google-generativeai,urllib3,requests,certifi
 orientation = portrait
 android.archs = arm64-v8a
 android.allow_backup = True
