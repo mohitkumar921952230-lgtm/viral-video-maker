@@ -178,7 +178,7 @@ class ProcessingScreen(Screen):
         layout.add_widget(self.progress)
 
         self.detail_label = Label(
-            text="Establishing secure Google Gemini AI connection...", 
+            text="Detecting active Gemini model on your account...", 
             font_size='13sp', 
             color=(0.7, 0.7, 0.7, 1),
             size_hint_y=None,
@@ -190,9 +190,9 @@ class ProcessingScreen(Screen):
         self.add_widget(layout)
 
     def launch_generation(self):
-        self.progress.value = 25
-        self.step_label.text = "Structuring Story & Dialogues..."
-        self.detail_label.text = "Connecting to Gemini Engine..."
+        self.progress.value = 20
+        self.step_label.text = "Finding Active Gemini Models..."
+        self.detail_label.text = "Querying available models list..."
         t = threading.Thread(target=self._worker_thread)
         t.daemon = True
         t.start()
@@ -200,6 +200,7 @@ class ProcessingScreen(Screen):
     def _worker_thread(self):
         app = App.get_running_app()
         data = app.project_data
+        api_key = data['api_key']
 
         prompt = (
             f"Act as a professional viral 3D animation shorts director.\n"
@@ -219,36 +220,57 @@ class ProcessingScreen(Screen):
         headers = {"Content-Type": "application/json"}
         payload = {"contents": [{"parts": [{"text": prompt}]}]}
 
-        # Supported models list for automatic fallback
-        model_endpoints = [
-            ("v1beta", "gemini-1.5-flash-latest"),
-            ("v1beta", "gemini-1.5-pro-latest"),
-            ("v1beta", "gemini-pro"),
-            ("v1", "gemini-1.5-flash")
-        ]
+        # Step 1: Auto-detect available models for this specific API key
+        chosen_models = []
+        list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
+        try:
+            r = requests.get(list_url, timeout=15, verify=False)
+            if r.status_code == 200:
+                m_data = r.json()
+                for m in m_data.get("models", []):
+                    # Pick models that support content generation
+                    if "generateContent" in m.get("supportedGenerationMethods", []):
+                        chosen_models.append(m["name"]) # format: models/xyz
+        except Exception:
+            pass
+
+        # If list query fails, use safe backup list
+        if not chosen_models:
+            chosen_models = [
+                "models/gemini-1.5-flash-latest",
+                "models/gemini-pro",
+                "models/gemini-1.0-pro"
+            ]
+
+        Clock.schedule_once(lambda dt: self.update_status(50, "Generating Production Bundle...", f"Found {len(chosen_models)} models. Connecting..."), 0)
 
         success = False
         last_error = ""
 
-        for ver, mod in model_endpoints:
-            url = f"https://generativelanguage.googleapis.com/{ver}/models/{mod}:generateContent?key={data['api_key']}"
+        # Step 2: Call the first working model dynamically
+        for mod_name in chosen_models:
+            # mod_name already includes 'models/' prefix
+            clean_name = mod_name if mod_name.startswith("models/") else f"models/{mod_name}"
+            gen_url = f"https://generativelanguage.googleapis.com/v1beta/{clean_name}:generateContent?key={api_key}"
+
             try:
-                Clock.schedule_once(lambda dt, m=mod: self.update_status(65, "Rendering Production Bundle...", f"Connected via {m}..."), 0)
-                res = requests.post(url, headers=headers, json=payload, timeout=40, verify=False)
+                display_short = clean_name.replace("models/", "")
+                Clock.schedule_once(lambda dt, s=display_short: self.update_status(75, "Crafting Script & Prompts...", f"Running on {s}..."), 0)
+                res = requests.post(gen_url, headers=headers, json=payload, timeout=45, verify=False)
                 res_json = res.json()
 
                 if "candidates" in res_json and len(res_json["candidates"]) > 0:
                     raw_text = res_json["candidates"][0]["content"]["parts"][0]["text"]
-                    Clock.schedule_once(lambda dt: self.on_complete(raw_text), 0)
+                    Clock.schedule_once(lambda dt, t=raw_text: self.on_complete(t), 0)
                     success = True
                     break
                 elif "error" in res_json:
-                    last_error = res_json["error"].get("message", "API Request Failed")
+                    last_error = res_json["error"].get("message", "API Error")
             except Exception as e:
                 last_error = str(e)
 
         if not success:
-            Clock.schedule_once(lambda dt: self.on_fail(f"API Error: {last_error}"), 0)
+            Clock.schedule_once(lambda dt, err=last_error: self.on_fail(f"Failed to generate: {err}"), 0)
 
     def update_status(self, val, step_txt, detail_txt):
         self.progress.value = val
